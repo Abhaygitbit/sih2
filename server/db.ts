@@ -1,0 +1,247 @@
+import fs from "fs";
+import path from "path";
+import { PGlite } from "@electric-sql/pglite";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+
+const dbPath = path.resolve(process.cwd(), "data/postgres_db");
+let dbInstance: PGlite | null = null;
+
+export async function getDb(): Promise<PGlite> {
+  if (!dbInstance) {
+    try {
+      fs.mkdirSync(dbPath, { recursive: true });
+
+      // Clean up stale lock if prior container instance terminated ungracefully
+      const pidFile = path.join(dbPath, "postmaster.pid");
+      if (fs.existsSync(pidFile)) {
+        try {
+          fs.unlinkSync(pidFile);
+        } catch {
+          // ignore
+        }
+      }
+
+      const instance = new PGlite(dbPath);
+      await initSchema(instance);
+      dbInstance = instance;
+    } catch (err) {
+      console.warn("Could not initialize disk-based PGlite, falling back to in-memory mode:", err);
+      try {
+        const memInstance = new PGlite();
+        await initSchema(memInstance);
+        dbInstance = memInstance;
+      } catch (memErr) {
+        console.error("Critical: Failed to initialize in-memory PGlite:", memErr);
+        throw memErr;
+      }
+    }
+  }
+  return dbInstance;
+}
+
+async function initSchema(db: PGlite) {
+  // 1. Users table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'USER',
+      user_type TEXT NOT NULL DEFAULT 'MSMEs',
+      organization TEXT DEFAULT '',
+      gst_number TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_login_at TIMESTAMP,
+      last_activity_at TIMESTAMP
+    );
+  `);
+
+  // Ensure column exists for any pre-created database
+  try {
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gst_number TEXT DEFAULT '';`);
+  } catch (_e) {
+    // column may already exist
+  }
+
+  // 2. Sessions table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMP NOT NULL
+    );
+  `);
+
+  // 3. Conversations table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 4. Messages table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      citations TEXT DEFAULT '[]',
+      evidence_sources TEXT DEFAULT '[]',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 5. Documents table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_type TEXT NOT NULL,
+      file_size BIGINT NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'uploaded',
+      error_message TEXT DEFAULT '',
+      total_chunks INT DEFAULT 0,
+      uploaded_by TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 6. Audit logs table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      user_email TEXT,
+      action TEXT NOT NULL,
+      resource TEXT NOT NULL,
+      metadata TEXT DEFAULT '{}',
+      ip_address TEXT DEFAULT '',
+      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // 7. Reports table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      query TEXT NOT NULL,
+      title TEXT NOT NULL,
+      downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Seed default users if table is empty
+  const userCheck = await db.query(`SELECT COUNT(*) as count FROM users;`);
+  const count = parseInt(String((userCheck.rows[0] as any)?.count || '0'), 10);
+  if (count === 0) {
+    const adminPasswordHash = await bcrypt.hash("Admin@12345", 10);
+    const userPasswordHash = await bcrypt.hash("User@12345", 10);
+
+    const defaultUsers = [
+      {
+        id: "usr_admin_default",
+        name: "IP-SAKTI Regulatory Administrator",
+        email: "admin@ipsakti.in",
+        password_hash: adminPasswordHash,
+        role: "ADMIN",
+        user_type: "Admin",
+        organization: "Ministry of AYUSH / Patent Controller",
+        status: "active",
+      },
+      {
+        id: "usr_msme_default",
+        name: "Rajesh Sharma (MSME Director)",
+        email: "msme@herbals.com",
+        password_hash: userPasswordHash,
+        role: "USER",
+        user_type: "MSMEs",
+        organization: "Arya Vaidya Herbal Formulations Pvt Ltd",
+        status: "active",
+      },
+      {
+        id: "usr_researcher_default",
+        name: "Dr. Ananya Sen (Principal Scientist)",
+        email: "researcher@biotech.ac.in",
+        password_hash: userPasswordHash,
+        role: "USER",
+        user_type: "Researchers/Searchers",
+        organization: "National Botanical Research & Biotech Institute",
+        status: "active",
+      }
+    ];
+
+    for (const u of defaultUsers) {
+      await db.query(`
+        INSERT INTO users (id, name, email, password_hash, role, user_type, organization, status, created_at, last_login_at, last_activity_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+      `, [u.id, u.name, u.email, u.password_hash, u.role, u.user_type, u.organization, u.status]);
+    }
+
+    // Insert initial audit log for seeding
+    await db.query(`
+      INSERT INTO audit_logs (id, user_id, user_email, action, resource, metadata, timestamp)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP);
+    `, [
+      `log_${Date.now()}`,
+      "usr_admin_default",
+      "admin@ipsakti.in",
+      "system_initialized",
+      "database",
+      JSON.stringify({ note: "Default database schema initialized with Admin, MSME, and Researcher accounts" })
+    ]);
+  }
+}
+
+// Helper functions
+export async function logAuditEvent(params: {
+  userId?: string | null;
+  userEmail?: string | null;
+  action: string;
+  resource: string;
+  metadata?: any;
+  ipAddress?: string;
+}) {
+  try {
+    const db = await getDb();
+    const id = `log_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    await db.query(`
+      INSERT INTO audit_logs (id, user_id, user_email, action, resource, metadata, ip_address, timestamp)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP);
+    `, [
+      id,
+      params.userId || null,
+      params.userEmail || null,
+      params.action,
+      params.resource,
+      JSON.stringify(params.metadata || {}),
+      params.ipAddress || ""
+    ]);
+  } catch (err) {
+    console.error("Failed to write audit log:", err);
+  }
+}
+
+export async function updateUserActivity(userId: string) {
+  try {
+    const db = await getDb();
+    await db.query(`
+      UPDATE users SET last_activity_at = CURRENT_TIMESTAMP WHERE id = $1;
+    `, [userId]);
+  } catch (err) {
+    console.warn("Failed to update user activity:", err);
+  }
+}
