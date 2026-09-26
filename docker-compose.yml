@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # 1. ChromaDB Vector Database Container
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: ipsakti-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSISTENCE_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. IP-SAKTI Sahayak Full-Stack Node.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ipsakti-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Connects to ChromaDB container via internal docker network
+      - CHROMA_URL=http://chromadb:8000
+      # Point this to your Supabase PostgreSQL connection string
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      chromadb:
+        condition: service_started
+    volumes:
+      - app_uploads:/app/data/uploads
+      - app_data:/app/data/postgres_db
+    restart: unless-stopped
+
+volumes:
+  chroma_data:
+    driver: local
+  app_uploads:
+    driver: local
+  app_data:
+    driver: local

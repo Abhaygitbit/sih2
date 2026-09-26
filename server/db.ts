@@ -1,14 +1,44 @@
 import fs from "fs";
 import path from "path";
 import { PGlite } from "@electric-sql/pglite";
+import pg from "pg";
+const { Pool } = pg;
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
-const dbPath = path.resolve(process.cwd(), "data/postgres_db");
-let dbInstance: PGlite | null = null;
+export interface DatabaseClient {
+  query(sql: string, params?: any[]): Promise<{ rows: any[] }>;
+}
 
-export async function getDb(): Promise<PGlite> {
+const dbPath = path.resolve(process.cwd(), "data/postgres_db");
+let dbInstance: DatabaseClient | null = null;
+
+export async function getDb(): Promise<DatabaseClient> {
   if (!dbInstance) {
+    const databaseUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
+
+    if (databaseUrl) {
+      try {
+        console.log("Connecting to external Supabase / PostgreSQL database...");
+        const isLocal = databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+        const pool = new Pool({
+          connectionString: databaseUrl,
+          ssl: isLocal ? false : { rejectUnauthorized: false },
+          max: 10,
+          idleTimeoutMillis: 30000,
+        });
+
+        // Test connection
+        await pool.query("SELECT 1;");
+        console.log("Connected to Supabase PostgreSQL successfully.");
+        await initSchema(pool);
+        dbInstance = pool;
+        return dbInstance;
+      } catch (cloudErr) {
+        console.warn("Failed to connect to DATABASE_URL, falling back to local database engine:", cloudErr);
+      }
+    }
+
     try {
       fs.mkdirSync(dbPath, { recursive: true });
 
@@ -40,7 +70,7 @@ export async function getDb(): Promise<PGlite> {
   return dbInstance;
 }
 
-async function initSchema(db: PGlite) {
+async function initSchema(db: DatabaseClient) {
   // 1. Users table
   await db.query(`
     CREATE TABLE IF NOT EXISTS users (

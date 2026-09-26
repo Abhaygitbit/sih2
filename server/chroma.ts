@@ -175,6 +175,45 @@ export class ChromaCollection {
       });
     }
     this.save();
+
+    // If external ChromaDB is configured (e.g. Docker or local chromadb service), sync chunks
+    const chromaUrl = process.env.CHROMA_URL;
+    if (chromaUrl) {
+      this.syncToChromaServer(chromaUrl, params).catch((_err) => {
+        // non-blocking
+      });
+    }
+  }
+
+  private async syncToChromaServer(
+    chromaUrl: string,
+    params: { ids: string[]; documents: string[]; metadatas: ChromaMetadata[]; embeddings?: number[][] }
+  ) {
+    try {
+      const baseUrl = chromaUrl.replace(/\/$/, "");
+      const colRes = await fetch(`${baseUrl}/api/v1/collections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "ipsakti_statutes", get_or_create: true }),
+      });
+      if (!colRes.ok) return;
+      const colData = (await colRes.json()) as any;
+      const collectionId = colData?.id;
+      if (!collectionId) return;
+
+      await fetch(`${baseUrl}/api/v1/collections/${collectionId}/add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: params.ids,
+          documents: params.documents,
+          metadatas: params.metadatas,
+          embeddings: params.embeddings || params.documents.map((d) => generateEmbedding(d)),
+        }),
+      });
+    } catch {
+      // graceful fallback to embedded vector collection
+    }
   }
 
   public delete(where: { document_id?: string; id?: string }) {

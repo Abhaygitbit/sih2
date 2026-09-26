@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ipsakti-sahayak
+    runtime: node
+    plan: free
+    region: singapore # Closest to India (or oregon/frankfurt)
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GROQ_API_KEY
+        sync: false # Set in Render Dashboard secrets
+      - key: GEMINI_API_KEY
+        sync: false # Optional fallback key
+      - key: DATABASE_URL
+        sync: false # Set to your Supabase Transaction Pooler connection string
+      - key: CHROMA_URL
+        value: "" # Optional; if empty, uses built-in persistent vector collection
