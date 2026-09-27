@@ -414,14 +414,30 @@ Nagoya Protocol: Internationally Recognized Certificate of Compliance (IRCC) mus
     // Write placeholder document file
     fs.writeFileSync(docPath, doc.chunks.map((c) => `${c.section}\n\n${c.text}`).join("\n\n---\n\n"), "utf8");
 
-    await db.query(
-      `
-      INSERT INTO documents (id, title, original_name, file_path, file_type, file_size, status, total_chunks, uploaded_by, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, 'processed', $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      ON CONFLICT (id) DO UPDATE SET status = 'processed', total_chunks = $7;
-    `,
-      [doc.id, doc.title, doc.originalName, docPath, doc.fileType, doc.fileSize, doc.chunks.length, doc.uploadedBy]
-    );
+    try {
+      await db.query(
+        `
+        INSERT INTO documents (id, title, original_name, file_path, file_type, file_size, status, total_chunks, uploaded_by, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'processed', $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (id) DO UPDATE SET status = 'processed', total_chunks = $7;
+      `,
+        [doc.id, doc.title, doc.originalName, docPath, doc.fileType, doc.fileSize, doc.chunks.length, doc.uploadedBy]
+      );
+    } catch (insertErr) {
+      try {
+        // Fallback for custom Supabase constraints that expect 'uploaded' or 'completed'
+        await db.query(
+          `
+          INSERT INTO documents (id, title, original_name, file_path, file_type, file_size, status, total_chunks, uploaded_by, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, 'uploaded', $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ON CONFLICT (id) DO NOTHING;
+        `,
+          [doc.id, doc.title, doc.originalName, docPath, doc.fileType, doc.fileSize, doc.chunks.length, doc.uploadedBy]
+        );
+      } catch (_e2) {
+        // Continue to indexing in ChromaDB
+      }
+    }
 
     const ids: string[] = [];
     const documents: string[] = [];

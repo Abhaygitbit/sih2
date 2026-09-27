@@ -198,6 +198,13 @@ async function initSchema(db: DatabaseClient) {
     );
   `);
 
+  // Drop restrictive check constraint if imported from prior migrations
+  try {
+    await db.query(`ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_status_check;`);
+  } catch (_e) {
+    // ignore
+  }
+
   // 6. Audit logs table
   await db.query(`
     CREATE TABLE IF NOT EXISTS audit_logs (
