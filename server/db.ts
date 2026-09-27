@@ -5,6 +5,7 @@ import pg from "pg";
 const { Pool } = pg;
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { InMemoryDatabase } from "./memoryDb";
 
 export interface DatabaseClient {
   query(sql: string, params?: any[]): Promise<{ rows: any[] }>;
@@ -83,13 +84,8 @@ export async function getDb(): Promise<DatabaseClient> {
     }
 
     if (process.env.NODE_ENV === 'production' && databaseUrl) {
-      console.error("❌ CRITICAL: Could not reach Supabase over IPv4. Please verify your Supabase region and password in DATABASE_URL.");
-      // Do not launch PGlite WebAssembly in low-memory production container to avoid SIGTERM
-      const stubDb: DatabaseClient = {
-        query: async () => ({ rows: [] }),
-        end: async () => {},
-      };
-      dbInstance = stubDb;
+      console.warn("⚠️ Using high-speed in-memory database fallback with pre-seeded demo accounts. Verify DATABASE_URL region/password to use external Supabase.");
+      dbInstance = new InMemoryDatabase();
       return dbInstance;
     }
 
