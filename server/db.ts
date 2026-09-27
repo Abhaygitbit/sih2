@@ -26,9 +26,19 @@ export async function getDb(): Promise<DatabaseClient> {
 
       const isLocal = databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
 
+      // Allow cloud database SSL with self-signed certificate chains
+      if (!isLocal) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      }
+
       const tryConnect = async (connStr: string, label: string) => {
+        // Strip sslmode and ssl query params so pg-connection-string does not override our ssl object
+        const cleanConnStr = connStr
+          .replace(/[?&]sslmode=[^&]+/gi, '')
+          .replace(/[?&]ssl=[^&]+/gi, '');
+
         const pool = new Pool({
-          connectionString: connStr,
+          connectionString: cleanConnStr,
           ssl: isLocal ? false : { rejectUnauthorized: false },
           max: 4,
           connectionTimeoutMillis: 8000,
