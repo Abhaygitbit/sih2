@@ -15,28 +15,72 @@ let dbInstance: DatabaseClient | null = null;
 
 export async function getDb(): Promise<DatabaseClient> {
   if (!dbInstance) {
-    const databaseUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
+    let databaseUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
 
     if (databaseUrl) {
+      // Strip accidental wrapping quotes (common when copying from .env into Render dashboard)
+      databaseUrl = databaseUrl.trim().replace(/^["']|["']$/g, '');
+
+      // Remove Prisma-specific parameters that can confuse node-postgres
+      databaseUrl = databaseUrl.replace(/[?&]uselibpqcompat=true/g, '');
+
+      const isLocal = databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+
+      const tryConnect = async (connStr: string, label: string) => {
+        const pool = new Pool({
+          connectionString: connStr,
+          ssl: isLocal ? false : { rejectUnauthorized: false },
+          max: 4,
+          connectionTimeoutMillis: 8000,
+          idleTimeoutMillis: 15000,
+        });
+        await pool.query("SELECT 1;");
+        await initSchema(pool);
+        return pool;
+      };
+
       try {
         console.log("Connecting to external Supabase / PostgreSQL database...");
-        const isLocal = databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
-        const pool = new Pool({
-          connectionString: databaseUrl,
-          ssl: isLocal ? false : { rejectUnauthorized: false },
-          max: 10,
-          idleTimeoutMillis: 30000,
-        });
-
-        // Test connection
-        await pool.query("SELECT 1;");
+        dbInstance = await tryConnect(databaseUrl, "Primary");
         console.log("Connected to Supabase PostgreSQL successfully.");
-        await initSchema(pool);
-        dbInstance = pool;
         return dbInstance;
-      } catch (cloudErr) {
-        console.warn("Failed to connect to DATABASE_URL, falling back to local database engine:", cloudErr);
+      } catch (cloudErr: any) {
+        console.warn("⚠️ Failed to connect using provided DATABASE_URL:", cloudErr?.message || cloudErr);
+
+        // Auto-recovery for Supabase IPv4 / Pooler:
+        // Render does NOT support IPv6 (causing ENETUNREACH on direct hosts like db.xxx.supabase.co:5432).
+        // It requires the IPv4 Supavisor Pooler (aws-0-[region].pooler.supabase.com:6543).
+        const match = databaseUrl.match(/postgres(?:\.([a-zA-Z0-9_-]+))?:([^@]+)@(?:aws-0-([a-zA-Z0-9_-]+)\.pooler\.supabase\.com|db\.([a-zA-Z0-9_-]+)\.supabase\.co)/);
+        const projectRef = match ? (match[1] || match[4]) : null;
+        const password = match ? match[2] : null;
+
+        if (projectRef && password) {
+          // IP 2406:da14 is AWS Singapore (ap-southeast-1), which is the most common region in Asia.
+          const candidateRegions = ["ap-southeast-1", "ap-south-1", "us-east-1", "eu-central-1", "us-west-1"];
+          for (const region of candidateRegions) {
+            const poolerUrl = `postgresql://postgres.${projectRef}:${password}@aws-0-${region}.pooler.supabase.com:6543/postgres?sslmode=require`;
+            try {
+              console.log(`Attempting IPv4 pooler connection for region '${region}'...`);
+              dbInstance = await tryConnect(poolerUrl, `Pooler-${region}`);
+              console.log(`✅ Connected successfully to Supabase IPv4 Pooler in '${region}'!`);
+              return dbInstance;
+            } catch (rErr: any) {
+              // continue trying candidate regions
+            }
+          }
+        }
       }
+    }
+
+    if (process.env.NODE_ENV === 'production' && databaseUrl) {
+      console.error("❌ CRITICAL: Could not reach Supabase over IPv4. Please verify your Supabase region and password in DATABASE_URL.");
+      // Do not launch PGlite WebAssembly in low-memory production container to avoid SIGTERM
+      const stubDb: DatabaseClient = {
+        query: async () => ({ rows: [] }),
+        end: async () => {},
+      };
+      dbInstance = stubDb;
+      return dbInstance;
     }
 
     try {

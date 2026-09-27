@@ -19,6 +19,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NODE_OPTIONS="--max-old-space-size=300"
 
 # Copy built artifacts and package files
 COPY package*.json ./
@@ -31,4 +32,4 @@ RUN mkdir -p /app/data/chroma_db /app/data/postgres_db /app/data/uploads
 
 EXPOSE 3000
 
-CMD ["npm", "run", "start"]
+CMD ["node", "dist/server.cjs"]
