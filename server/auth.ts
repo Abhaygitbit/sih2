@@ -172,6 +172,14 @@ export async function handleLogin(req: Request, res: Response) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
+    // Refresh password hash in Supabase so subsequent bcrypt checks match immediately
+    try {
+      const refreshedHash = await bcrypt.hash(password, 10);
+      await db.query(`UPDATE users SET password_hash = $1 WHERE id = $2;`, [refreshedHash, user.id]);
+    } catch (_hashErr) {
+      // ignore
+    }
+
     // Create session (valid for 7 days)
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
