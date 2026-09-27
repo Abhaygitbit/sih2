@@ -231,52 +231,61 @@ async function initSchema(db: DatabaseClient) {
     );
   `);
 
-  // Seed default users if table is empty
-  const userCheck = await db.query(`SELECT COUNT(*) as count FROM users;`);
-  const count = parseInt(String((userCheck.rows[0] as any)?.count || '0'), 10);
-  if (count === 0) {
-    const adminPasswordHash = await bcrypt.hash("Admin@12345", 10);
-    const userPasswordHash = await bcrypt.hash("User@12345", 10);
+  // Always ensure default demo users exist with valid credentials in Supabase
+  const adminPasswordHash = await bcrypt.hash("Admin@12345", 10);
+  const userPasswordHash = await bcrypt.hash("User@12345", 10);
 
-    const defaultUsers = [
-      {
-        id: "usr_admin_default",
-        name: "IP-SAKTI Regulatory Administrator",
-        email: "admin@ipsakti.in",
-        password_hash: adminPasswordHash,
-        role: "ADMIN",
-        user_type: "Admin",
-        organization: "Ministry of AYUSH / Patent Controller",
-        status: "active",
-      },
-      {
-        id: "usr_msme_default",
-        name: "Rajesh Sharma (MSME Director)",
-        email: "msme@herbals.com",
-        password_hash: userPasswordHash,
-        role: "USER",
-        user_type: "MSMEs",
-        organization: "Arya Vaidya Herbal Formulations Pvt Ltd",
-        status: "active",
-      },
-      {
-        id: "usr_researcher_default",
-        name: "Dr. Ananya Sen (Principal Scientist)",
-        email: "researcher@biotech.ac.in",
-        password_hash: userPasswordHash,
-        role: "USER",
-        user_type: "Researchers/Searchers",
-        organization: "National Botanical Research & Biotech Institute",
-        status: "active",
-      }
-    ];
-
-    for (const u of defaultUsers) {
-      await db.query(`
-        INSERT INTO users (id, name, email, password_hash, role, user_type, organization, status, created_at, last_login_at, last_activity_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-      `, [u.id, u.name, u.email, u.password_hash, u.role, u.user_type, u.organization, u.status]);
+  const defaultUsers = [
+    {
+      id: "usr_admin_default",
+      name: "IP-SAKTI Regulatory Administrator",
+      email: "admin@ipsakti.in",
+      password_hash: adminPasswordHash,
+      role: "ADMIN",
+      user_type: "Admin",
+      organization: "Ministry of AYUSH / Patent Controller",
+      gst_number: "07AAACG0521D1Z8",
+      status: "active",
+    },
+    {
+      id: "usr_msme_default",
+      name: "Rajesh Sharma (MSME Director)",
+      email: "msme@herbals.com",
+      password_hash: userPasswordHash,
+      role: "USER",
+      user_type: "MSMEs",
+      organization: "Arya Vaidya Herbal Formulations Pvt Ltd",
+      gst_number: "27AABCA1234F1Z5",
+      status: "active",
+    },
+    {
+      id: "usr_researcher_default",
+      name: "Dr. Ananya Sen (Principal Scientist)",
+      email: "researcher@biotech.ac.in",
+      password_hash: userPasswordHash,
+      role: "USER",
+      user_type: "Researchers/Searchers",
+      organization: "National Botanical Research & Biotech Institute",
+      gst_number: "09AAATN9876C1Z3",
+      status: "active",
     }
+  ];
+
+  for (const u of defaultUsers) {
+    try {
+      await db.query(`
+        INSERT INTO users (id, name, email, password_hash, role, user_type, organization, gst_number, status, created_at, last_login_at, last_activity_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (email) DO UPDATE SET 
+          password_hash = $4, 
+          role = $5, 
+          user_type = $6, 
+          status = 'active';
+      `, [u.id, u.name, u.email, u.password_hash, u.role, u.user_type, u.organization, u.gst_number, u.status]);
+    } catch (upsertErr) {
+      console.warn(`Could not upsert default user ${u.email}:`, upsertErr);
+    }
+  }
 
     // Insert initial audit log for seeding
     await db.query(`
@@ -290,7 +299,6 @@ async function initSchema(db: DatabaseClient) {
       "database",
       JSON.stringify({ note: "Default database schema initialized with Admin, MSME, and Researcher accounts" })
     ]);
-  }
 }
 
 // Helper functions

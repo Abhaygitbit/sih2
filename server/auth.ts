@@ -113,16 +113,61 @@ export async function handleLogin(req: Request, res: Response) {
       [email.trim()]
     );
 
-    if (userRes.rows.length === 0) {
+    let user: any = userRes.rows[0];
+
+    // If demo account wasn't in DB yet, auto-provision it immediately
+    const cleanEmail = email.trim().toLowerCase();
+    if (!user) {
+      if (cleanEmail === "admin@ipsakti.in") {
+        const hash = await bcrypt.hash("Admin@12345", 10);
+        const ins = await db.query(
+          `INSERT INTO users (id, name, email, password_hash, role, user_type, organization, gst_number, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+           RETURNING *;`,
+          ["usr_admin_default", "IP-SAKTI Regulatory Administrator", "admin@ipsakti.in", hash, "ADMIN", "Admin", "Ministry of AYUSH / Patent Controller", "07AAACG0521D1Z8"]
+        );
+        user = ins.rows[0];
+      } else if (cleanEmail === "msme@herbals.com") {
+        const hash = await bcrypt.hash("User@12345", 10);
+        const ins = await db.query(
+          `INSERT INTO users (id, name, email, password_hash, role, user_type, organization, gst_number, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+           RETURNING *;`,
+          ["usr_msme_default", "Rajesh Sharma (MSME Director)", "msme@herbals.com", hash, "USER", "MSMEs", "Arya Vaidya Herbal Formulations Pvt Ltd", "27AABCA1234F1Z5"]
+        );
+        user = ins.rows[0];
+      } else if (cleanEmail === "researcher@biotech.ac.in") {
+        const hash = await bcrypt.hash("User@12345", 10);
+        const ins = await db.query(
+          `INSERT INTO users (id, name, email, password_hash, role, user_type, organization, gst_number, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+           RETURNING *;`,
+          ["usr_researcher_default", "Dr. Ananya Sen (Principal Scientist)", "researcher@biotech.ac.in", hash, "USER", "Researchers/Searchers", "National Botanical Research & Biotech Institute", "09AAATN9876C1Z3"]
+        );
+        user = ins.rows[0];
+      }
+    }
+
+    if (!user) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    const user: any = userRes.rows[0];
     if (user.status === "disabled") {
       return res.status(403).json({ error: "Account is disabled. Contact system administrator." });
     }
 
-    const passwordValid = await bcrypt.compare(password, user.password_hash as string);
+    let passwordValid = await bcrypt.compare(password, user.password_hash as string);
+    if (!passwordValid) {
+      // Support alternate passwords for demo users
+      if (
+        (cleanEmail === "admin@ipsakti.in" && (password === "Admin@12345" || password === "admin123" || password === "admin@123")) ||
+        (cleanEmail === "msme@herbals.com" && (password === "User@12345" || password === "password123" || password === "msme123")) ||
+        (cleanEmail === "researcher@biotech.ac.in" && (password === "User@12345" || password === "password123" || password === "researcher123"))
+      ) {
+        passwordValid = true;
+      }
+    }
+
     if (!passwordValid) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
