@@ -61,7 +61,7 @@ const SLIDES: SlideData[] = [
     image: ayurvedicPhoto2,
     imageAlt: 'Traditional spices, cardamom in terracotta pot, cinnamon sticks, ginger, and Ayurvedic botanicals',
     date: '14–16th June 2026',
-    location: 'Palais des Expositions, Nice, France',
+    location: 'Bharat Mandapam, Pragati Maidan, New Delhi, India',
     features: [
       { icon: 'ShieldCheck', text: 'Dual-Regime Indian & USPTO Patent Strategy' },
       { icon: 'Award', text: 'Novel Extraction & NDDS Phytosome Formulations' },
@@ -247,8 +247,10 @@ export const AyushHeroSlider: React.FC<AyushHeroSliderProps> = ({ onSelectAction
               {slide.badge}
             </div>
 
-            <div className="flex items-baseline gap-3 mb-2">
-              <span className="text-xs font-mono uppercase tracking-widest text-indigo-400">Initiative</span>
+            <div className="flex flex-wrap items-baseline gap-2.5 sm:gap-3.5 mb-2">
+              <span className="text-2xl sm:text-4xl font-black tracking-tight text-indigo-400 font-mono">
+                Initiative
+              </span>
               <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white font-mono">
                 bharat <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-teal-300">INNOVATES</span>
               </h2>

@@ -66,10 +66,10 @@ export const SaaSHomepage: React.FC<SaaSHomepageProps> = ({ onOpenAuth }) => {
                 <Scale className="w-4 h-4" />
               </div>
               <div className="flex flex-col">
-                <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">
+                <span className="font-black text-base sm:text-lg tracking-tight text-slate-900 dark:text-white leading-tight">
                   IP-SAKTI Sahayak
                 </span>
-                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold leading-none">
+                <span className="text-[10px] sm:text-xs font-mono text-emerald-700 dark:text-emerald-400 font-semibold leading-none">
                   Traditional Knowledge AI Copilot
                 </span>
               </div>
