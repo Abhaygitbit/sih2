@@ -77,13 +77,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const setDemoCredentials = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setMode('signin');
-    setError(null);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
       <div 
@@ -279,34 +272,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </button>
           </form>
-        </div>
-
-        {/* 1-Click Demo Accounts Pill Bar */}
-        <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-center flex-shrink-0">
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-1.5">Quick 1-Click Demo Fill:</p>
-          <div className="flex flex-wrap gap-1.5 justify-center">
-            <button
-              type="button"
-              onClick={() => setDemoCredentials('admin@ipsakti.in', 'Admin@12345')}
-              className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60 font-semibold border border-purple-200 dark:border-purple-800 transition-colors"
-            >
-              👑 Admin (admin@ipsakti.in)
-            </button>
-            <button
-              type="button"
-              onClick={() => setDemoCredentials('msme@herbals.com', 'User@12345')}
-              className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 font-semibold border border-emerald-200 dark:border-emerald-800 transition-colors"
-            >
-              🌿 MSME (msme@herbals.com)
-            </button>
-            <button
-              type="button"
-              onClick={() => setDemoCredentials('researcher@biotech.ac.in', 'User@12345')}
-              className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/60 font-semibold border border-blue-200 dark:border-blue-800 transition-colors"
-            >
-              🔬 Researcher (researcher@biotech.ac.in)
-            </button>
-          </div>
         </div>
       </div>
     </div>

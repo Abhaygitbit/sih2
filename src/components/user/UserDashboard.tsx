@@ -21,7 +21,9 @@ import {
   Sun,
   Moon,
   ArrowRight,
-  Download
+  Download,
+  Key,
+  Edit3
 } from 'lucide-react';
 import { useAuth } from '../../lib/authContext';
 import { downloadPDFReport } from '../../lib/pdfReport';
@@ -65,6 +67,10 @@ export const UserDashboard: React.FC = () => {
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileOrg, setProfileOrg] = useState(user?.organization || '');
   const [profileGst, setProfileGst] = useState(user?.gst_number || '');
+  const [profileCurrentPass, setProfileCurrentPass] = useState('');
+  const [profileNewPass, setProfileNewPass] = useState('');
+  const [profileConfirmPass, setProfileConfirmPass] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -243,6 +249,18 @@ export const UserDashboard: React.FC = () => {
     e.preventDefault();
     setProfileError(null);
     setProfileSaveSuccess(false);
+
+    if (profileNewPass && profileNewPass.length < 6) {
+      setProfileError('New password must be at least 6 characters long');
+      return;
+    }
+
+    if (profileNewPass && profileNewPass !== profileConfirmPass) {
+      setProfileError('New passwords do not match');
+      return;
+    }
+
+    setProfileSaving(true);
     try {
       const cleanGst = profileGst.trim().toUpperCase();
       if (cleanGst.length > 0) {
@@ -251,11 +269,22 @@ export const UserDashboard: React.FC = () => {
           throw new Error('Please enter a valid 15-character Indian GSTIN (e.g. 07AAAAA0000A1Z5)');
         }
       }
-      await updateProfile(profileName, profileOrg, cleanGst);
+      await updateProfile(
+        profileName,
+        profileOrg,
+        cleanGst,
+        profileCurrentPass || undefined,
+        profileNewPass || undefined
+      );
       setProfileSaveSuccess(true);
+      setProfileCurrentPass('');
+      setProfileNewPass('');
+      setProfileConfirmPass('');
       setTimeout(() => setProfileSaveSuccess(false), 3000);
     } catch (err: any) {
       setProfileError(err.message || 'Could not update profile');
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -302,7 +331,13 @@ export const UserDashboard: React.FC = () => {
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                 {user?.user_type}
               </span>
-              <span className="text-[9px] text-slate-400">ROLE: {user?.role}</span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('profile')}
+                className="text-[9px] text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-bold underline cursor-pointer"
+              >
+                Edit Profile
+              </button>
             </div>
           </div>
 
@@ -925,40 +960,98 @@ export const UserDashboard: React.FC = () => {
 
         {/* VIEW 5: USER PROFILE */}
         {activeTab === 'profile' && (
-          <div className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto w-full space-y-6">
-            <div className="pb-4 border-b border-slate-200 dark:border-slate-800">
-              <h1 className="text-xl font-bold text-slate-900 dark:text-white">User Profile & Account</h1>
-              <p className="text-xs text-slate-500">
-                View your institutional identity and role credentials. User types and role permissions are managed by administrators.
-              </p>
+          <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                  <User className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  User Profile & Account Settings
+                </h1>
+                <p className="text-xs text-slate-500 mt-1">
+                  View and manage your institutional identity, statutory registration, and security credentials.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" /> VERIFIED AYUSH CLIENT
+                </span>
+              </div>
+            </div>
+
+            {/* Profile Overview Card */}
+            <div className="p-6 rounded-2xl bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white shadow-xl relative overflow-hidden">
+              <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border-2 border-emerald-400/40 flex items-center justify-center text-white text-2xl font-black shadow-inner backdrop-blur-md">
+                    {user?.name?.slice(0, 2).toUpperCase() || 'US'}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-bold">{user?.name}</h2>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/25 text-emerald-200 border border-emerald-400/30">
+                        {user?.user_type || 'MSMEs'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-200 mt-0.5 font-mono">{user?.email}</p>
+                    <p className="text-xs text-slate-300 mt-1 flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5 text-teal-300" />
+                      <span>{user?.organization || 'Institutional Client'}</span>
+                      {user?.gst_number && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-emerald-200">
+                          GST: {user.gst_number}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex sm:flex-col items-center sm:items-end justify-between border-t sm:border-t-0 pt-3 sm:pt-0 border-white/10 text-xs text-emerald-200 space-y-1">
+                  <div>Role: <span className="font-bold text-white uppercase font-mono">{user?.role}</span></div>
+                  <div>Status: <span className="font-bold text-white uppercase font-mono">{user?.status || 'active'}</span></div>
+                  <div className="text-[11px] text-slate-400 font-mono">ID: {user?.id}</div>
+                </div>
+              </div>
             </div>
 
             {profileSaveSuccess && (
-              <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Profile details successfully updated in PostgreSQL database.</span>
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>Profile details and credentials successfully updated in the database.</span>
               </div>
             )}
 
             {profileError && (
-              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" />
+              <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-xs text-red-800 dark:text-red-200 flex items-center gap-2 animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
                 <span>{profileError}</span>
               </div>
             )}
 
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-5">
+            {/* Profile Edit Form Card */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-emerald-600" />
+                  Edit Profile Information
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update your personal name, affiliated organization, and statutory GSTIN.
+                </p>
+              </div>
+
               <form onSubmit={handleProfileSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Full Name
+                      Full Name *
                     </label>
                     <input
                       type="text"
                       required
                       value={profileName}
                       onChange={(e) => setProfileName(e.target.value)}
+                      placeholder="e.g. Dr. Priya Sharma"
                       className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
@@ -971,6 +1064,7 @@ export const UserDashboard: React.FC = () => {
                       type="text"
                       value={profileOrg}
                       onChange={(e) => setProfileOrg(e.target.value)}
+                      placeholder="e.g. Arya Vaidya Herbal Formulations Pvt Ltd"
                       className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
@@ -1012,19 +1106,85 @@ export const UserDashboard: React.FC = () => {
                     type="email"
                     disabled
                     value={user?.email || ''}
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/50 text-slate-500 cursor-not-allowed"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/50 text-slate-500 cursor-not-allowed font-mono"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Your email address is your unique system identifier and cannot be changed without administrator intervention.
+                  </p>
                 </div>
 
-                <div className="pt-2 flex items-center justify-between">
+                {/* Password update section */}
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-emerald-600" />
+                    Change Security Password (Optional)
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mb-3">
+                    Leave password fields blank if you only want to update your name or organization details.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Current Password
+                      </label>
+                      <input
+                        type="password"
+                        value={profileCurrentPass}
+                        onChange={(e) => setProfileCurrentPass(e.target.value)}
+                        placeholder="••••••••••••"
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        New Password
+                      </label>
+                      <input
+                        type="password"
+                        value={profileNewPass}
+                        onChange={(e) => setProfileNewPass(e.target.value)}
+                        placeholder="••••••••••••"
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Confirm New Password
+                      </label>
+                      <input
+                        type="password"
+                        value={profileConfirmPass}
+                        onChange={(e) => setProfileConfirmPass(e.target.value)}
+                        placeholder="••••••••••••"
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-800">
                   <div className="text-[11px] text-slate-400">
-                    Account Status: <span className="text-emerald-600 font-bold uppercase">{user?.status}</span>
+                    Account Status: <span className="text-emerald-600 font-bold uppercase">{user?.status || 'active'}</span>
                   </div>
                   <button
                     type="submit"
-                    className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors"
+                    disabled={profileSaving}
+                    className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
                   >
-                    Save Changes
+                    {profileSaving ? (
+                      <>
+                        <span className="inline-block animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" />
+                        <span>Updating Profile...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Save Profile Changes</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

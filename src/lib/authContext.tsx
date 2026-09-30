@@ -8,7 +8,7 @@ interface AuthContextType {
   login: (email: string, pass: string) => Promise<AuthUser>;
   register: (name: string, email: string, pass: string, org: string, userType: UserType, gstNumber?: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
-  updateProfile: (name: string, org: string, gstNumber?: string) => Promise<void>;
+  updateProfile: (name: string, org: string, gstNumber?: string, currentPassword?: string, newPassword?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -121,7 +121,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateProfile = async (name: string, org: string, gstNumber?: string) => {
+  const updateProfile = async (
+    name: string,
+    org: string,
+    gstNumber?: string,
+    currentPassword?: string,
+    newPassword?: string
+  ) => {
     if (!token) throw new Error('Not authenticated');
     const res = await fetch('/api/user/profile', {
       method: 'PUT',
@@ -129,7 +135,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ name, organization: org, gst_number: gstNumber }),
+      body: JSON.stringify({
+        name,
+        organization: org,
+        gst_number: gstNumber,
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
     });
     const data = await res.json();
     if (!res.ok) {

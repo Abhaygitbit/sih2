@@ -100,12 +100,31 @@ app.get("/api/auth/me", authenticateToken, (req: AuthRequest, res: Response) => 
 // ==========================================
 app.put("/api/user/profile", authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, organization, gst_number } = req.body;
+    const { name, organization, gst_number, current_password, new_password } = req.body;
     if (!name) {
       return res.status(400).json({ error: "Name is required" });
     }
     const cleanGst = gst_number !== undefined ? (gst_number || "").trim().toUpperCase() : (req.user!.gst_number || "");
     const db = await getDb();
+
+    // Check optional password update
+    if (new_password && new_password.trim().length > 0) {
+      if (new_password.trim().length < 6) {
+        return res.status(400).json({ error: "New password must be at least 6 characters" });
+      }
+      if (current_password) {
+        const checkUser = await db.query(`SELECT password_hash FROM users WHERE id = $1;`, [req.user!.id]);
+        if (checkUser.rows.length > 0) {
+          const valid = await bcrypt.compare(current_password, checkUser.rows[0].password_hash);
+          if (!valid) {
+            return res.status(400).json({ error: "Current password is incorrect" });
+          }
+        }
+      }
+      const newHash = await bcrypt.hash(new_password.trim(), 10);
+      await db.query(`UPDATE users SET password_hash = $1 WHERE id = $2;`, [newHash, req.user!.id]);
+    }
+
     await db.query(
       `
       UPDATE users 
@@ -120,7 +139,7 @@ app.put("/api/user/profile", authenticateToken, async (req: AuthRequest, res: Re
       userEmail: req.user!.email,
       action: "profile_updated",
       resource: `user:${req.user!.id}`,
-      metadata: { name, organization, gst_number: cleanGst },
+      metadata: { name, organization, gst_number: cleanGst, passwordChanged: !!new_password },
     });
 
     res.json({
